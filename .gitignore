@@ -1,0 +1,7 @@
+p6env/
+__pycache__/
+*.pyc
+.p6tool_config.json
+.p6_preview_tmp.wav
+*_converted.wav
+*_converted_Hz.wav
