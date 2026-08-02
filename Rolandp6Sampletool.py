@@ -121,6 +121,7 @@ def style_listbox(lb):
               highlightcolor=ACCENT_BLUE, font=("Segoe UI", 10))
 
 
+
 def style_checkbutton(cb):
     cb.config(bg=BG_DARK, fg=FG_TEXT, selectcolor=BG_INPUT,
               activebackground=BG_DARK, activeforeground=FG_TEXT,
