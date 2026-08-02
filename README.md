@@ -37,7 +37,8 @@ sudo apt install python3 python3-venv python3-pip ffmpeg libportaudio2 python3-t
 | python3-tk      | Tkinter GUI toolkit used for the application window     |
 
 ### 2.2 Create and activate a Python virtual environment
-
+ 
+ 
 ```bash
 cd ~
 python3 -m venv p6env
