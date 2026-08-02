@@ -13,7 +13,7 @@ files from several source samples at once.
 
 ## 1. System Requirements
 
-- Linux (tested on Ubuntu/Debian-based distributions), it should work windows and MacOS (not tested)
+- Linux (tested on Ubuntu/Debian-based distributions), it should work Windows and MacOS (not tested)
 - Python 3.10 or newer
 - A working audio output device
 - ffmpeg installed system-wide (required for MP3 support and for the Chop feature)
