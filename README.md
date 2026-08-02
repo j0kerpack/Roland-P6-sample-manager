@@ -253,7 +253,7 @@ mapped to a note starting at C4.
 | `SyntaxError` after manually editing the script       | Re-copy the full script exactly; avoid partial copy-paste of f-strings|
 | Samples not detected during sync                      | Confirm the IMPORT folder path is correct via "Choose Folder"        |
 | Chop output sounds heavily cut off                    | Your chosen slice count is too high for the sample length/rate; reduce slice count or use a lower sample rate |
-
+| sampes are not being transferred to Roland P6         | 10 MB of Samples can be transferred at once, you may first send Banks A-D and then banks E-H |
 ---
 
 ## 7. Quick Reference: Full Setup From Scratch
