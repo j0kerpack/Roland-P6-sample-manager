@@ -1423,7 +1423,7 @@ class SampleSlot:
 class P6ManagerApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("Roland AIRA P-6 Sample Manager v1.4.9")
+        self.root.title("Roland AIRA P-6 Sample Manager v1.5.1")
         self.root.configure(bg=BG_DARK)
         self.root.minsize(MAIN_MIN_W, MAIN_MIN_H)
         self.root.geometry(f"{MAIN_MIN_W}x{MAIN_MIN_H}")
