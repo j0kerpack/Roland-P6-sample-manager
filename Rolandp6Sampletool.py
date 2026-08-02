@@ -11,6 +11,8 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
+import time
+import uuid
 
 try:
     from pydub import AudioSegment
@@ -72,6 +74,8 @@ MAX_SECONDS = {
     (11025, 1): 23.7, (11025, 2): 11.85,
 }
 
+MAX_UPLOAD_BYTES = 10 * 1024 * 1024  # 10 MB soft limit per upload
+
 BG_DARK = "#1E1E24"
 BG_PANEL = "#2A2A33"
 BG_INPUT = "#33333E"
@@ -84,6 +88,7 @@ ACCENT_ORANGE = "#FFA726"
 ACCENT_PURPLE = "#AB47BC"
 SELECT_GREEN = "#3E7A3E"
 BORDER_COLOR = "#3D3D48"
+BORDER_LIGHT = "#5C5C6A"
 
 MAIN_MIN_W, MAIN_MIN_H = 900, 620
 CHOP_MIN_W, CHOP_MIN_H = 680, 580
@@ -124,7 +129,7 @@ def style_checkbutton(cb):
 
 
 class RoundedButton(tk.Canvas):
-    def __init__(self, parent, text="", command=None, bg=ACCENT_BLUE, fg="#00131A",
+    def __init__(self, parent, text="", command=None, bg=ACCENT_BLUE, fg="#FFFFFF",
                  parent_bg=None, width=110, height=32, radius=10,
                  font=("Segoe UI", 9, "bold"), state="normal"):
         parent_bg = parent_bg or parent.cget("bg")
@@ -236,6 +241,72 @@ class RoundedDropdown(tk.Canvas):
             self.command(val)
 
 
+class RoundedPanel(tk.Frame):
+    """A Canvas-backed panel with rounded corners, a lighter border, and a
+    title label, used in place of tk.LabelFrame (which cannot have rounded
+    corners). Add child widgets to `.body`, not to the panel itself.
+
+    Both the canvas (background) and body (content) occupy the same grid
+    cell of `self`, so `self`'s size is naturally driven by body's packed
+    content (exactly like a LabelFrame would size itself) -- no manual
+    width/height math needed."""
+
+    def __init__(self, parent, title="", parent_bg=None, panel_bg=BG_PANEL,
+                 border=BORDER_LIGHT, radius=14, title_fg=ACCENT_BLUE,
+                 title_font=("Segoe UI", 10, "bold")):
+        parent_bg = parent_bg or parent.cget("bg")
+        super().__init__(parent, bg=parent_bg)
+        self.grid_rowconfigure(0, weight=1)
+        self.grid_columnconfigure(0, weight=1)
+        self._panel_bg = panel_bg
+        self._border = border
+        self._radius = radius
+        self._title = title
+        self._title_fg = title_fg
+        self._title_font = title_font
+
+        self.canvas = tk.Canvas(self, bg=parent_bg, highlightthickness=0, bd=0, width=1, height=1)
+        self.canvas.grid(row=0, column=0, sticky="nsew")
+
+        self.body = tk.Frame(self, bg=panel_bg)
+        self.body.grid(row=0, column=0, sticky="nsew", padx=14, pady=(30, 12))
+
+        self.canvas.bind("<Configure>", lambda e: self._redraw())
+
+    def _round_rect(self, x1, y1, x2, y2, r, fill=None, outline=None, width=1):
+        # 1) Filled background: pieslices/rectangles use fill as their own
+        #    outline color too, so no stray radius/seam lines are visible.
+        self.canvas.create_arc(x1, y1, x1 + 2*r, y1 + 2*r, start=90, extent=90, style="pieslice", fill=fill, outline=fill)
+        self.canvas.create_arc(x2 - 2*r, y1, x2, y1 + 2*r, start=0, extent=90, style="pieslice", fill=fill, outline=fill)
+        self.canvas.create_arc(x1, y2 - 2*r, x1 + 2*r, y2, start=180, extent=90, style="pieslice", fill=fill, outline=fill)
+        self.canvas.create_arc(x2 - 2*r, y2 - 2*r, x2, y2, start=270, extent=90, style="pieslice", fill=fill, outline=fill)
+        self.canvas.create_rectangle(x1 + r, y1, x2 - r, y2, fill=fill, outline=fill)
+        self.canvas.create_rectangle(x1, y1 + r, x2, y2 - r, fill=fill, outline=fill)
+
+        # 2) Border: drawn once on top, as pure arcs (no radius lines) + straight edges.
+        if outline:
+            self.canvas.create_arc(x1, y1, x1 + 2*r, y1 + 2*r, start=90, extent=90, style="arc", outline=outline, width=width)
+            self.canvas.create_arc(x2 - 2*r, y1, x2, y1 + 2*r, start=0, extent=90, style="arc", outline=outline, width=width)
+            self.canvas.create_arc(x1, y2 - 2*r, x1 + 2*r, y2, start=180, extent=90, style="arc", outline=outline, width=width)
+            self.canvas.create_arc(x2 - 2*r, y2 - 2*r, x2, y2, start=270, extent=90, style="arc", outline=outline, width=width)
+            self.canvas.create_line(x1 + r, y1, x2 - r, y1, fill=outline, width=width)
+            self.canvas.create_line(x1 + r, y2, x2 - r, y2, fill=outline, width=width)
+            self.canvas.create_line(x1, y1 + r, x1, y2 - r, fill=outline, width=width)
+            self.canvas.create_line(x2, y1 + r, x2, y2 - r, fill=outline, width=width)
+
+    def _redraw(self):
+        self.canvas.delete("all")
+        w = self.canvas.winfo_width()
+        h = self.canvas.winfo_height()
+        if w < 4 or h < 4:
+            return
+        r = min(self._radius, w // 2, h // 2)
+        self._round_rect(1, 1, w - 1, h - 1, r, fill=self._panel_bg, outline=self._border)
+        if self._title:
+            self.canvas.create_text(16, 16, text=self._title, anchor="w",
+                                     fill=self._title_fg, font=self._title_font)
+
+
 def load_config():
     if os.path.exists(CONFIG_FILE):
         try:
@@ -326,6 +397,38 @@ def render_waveform_image(path, width_px=480, height_px=80):
         print(f"Could not render waveform: {e}")
         return None
 
+def trim_wav_file(src_path, start_frac, end_frac, fade_ms=2):
+    data, fs = sf.read(src_path, dtype="float32")
+    n = len(data)
+    start_i = max(0, min(int(start_frac * n), n - 1))
+    end_i = max(start_i + 1, min(int(end_frac * n), n))
+    trimmed = data[start_i:end_i]
+    trimmed = apply_micro_fade(trimmed, fs, fade_ms=fade_ms)
+    out_dir = os.path.join(os.path.expanduser("~"), ".p6_trim_tmp")
+    os.makedirs(out_dir, exist_ok=True)
+    out_path = os.path.join(out_dir, f"trim_{uuid.uuid4().hex[:8]}.wav")
+    sf.write(out_path, trimmed, fs)
+    return out_path
+
+
+
+def apply_micro_fade(data, fs, fade_ms=2):
+    """Wendet einen linearen Fade-In/Fade-Out von fade_ms Millisekunden an,
+    um Klick-Artefakte an harten Schnittkanten zu vermeiden."""
+    fade_len = int(fs * fade_ms / 1000)
+    fade_len = min(fade_len, len(data) // 2)
+    if fade_len <= 0:
+        return data
+    fade_in = np.linspace(0.0, 1.0, fade_len)
+    fade_out = np.linspace(1.0, 0.0, fade_len)
+    out = data.copy()
+    if out.ndim == 1:
+        out[:fade_len] *= fade_in
+        out[-fade_len:] *= fade_out
+    else:
+        out[:fade_len] *= fade_in[:, None]
+        out[-fade_len:] *= fade_out[:, None]
+    return out
 
 def convert_to_wav_if_needed(path):
     if path.lower().endswith(".wav"):
@@ -381,23 +484,15 @@ def build_chop_file(file_paths, rate, channels, num_slices, normalize_audio=Fals
     return combined
 
 
-class FolderPickerDialog(tk.Toplevel):
-    """Dark-themed replacement for filedialog.askdirectory(), since native OS
-    folder dialogs cannot be restyled through Tkinter."""
+class FolderNavMixin:
+    """Shared address-bar + quick-access folder navigation. Any class using
+    this must keep a `self.current_dir` and implement `self.refresh_list()`."""
 
-    def __init__(self, parent, initial_dir=None, title="Select Folder"):
-        super().__init__(parent)
-        self.title(title)
-        self.geometry(f"{PREVIEW_MIN_W}x{PREVIEW_MIN_H}")
-        self.minsize(PREVIEW_MIN_W, PREVIEW_MIN_H)
-        style_toplevel(self)
-        self.selected_dir = None
-        self.current_dir = initial_dir if initial_dir and os.path.isdir(initial_dir) else os.path.expanduser("~")
-
-        top = tk.Frame(self, padx=10, pady=10, bg=BG_DARK)
+    def _build_nav_bar(self, container_bg=BG_DARK):
+        top = tk.Frame(self, padx=10, pady=10, bg=container_bg)
         top.pack(fill="x")
         up_btn = RoundedButton(top, text="\u2191 Up", command=self.go_up,
-                                bg=BG_INPUT, fg=FG_TEXT, parent_bg=BG_DARK, width=60, height=28)
+                                bg=BG_INPUT, fg=FG_TEXT, parent_bg=container_bg, width=60, height=28)
         up_btn.pack(side="left", padx=(0, 6))
         self.path_entry = tk.Entry(top, bg=BG_INPUT, fg=FG_TEXT,
                                     insertbackground=FG_TEXT, relief="flat",
@@ -406,50 +501,19 @@ class FolderPickerDialog(tk.Toplevel):
         self.path_entry.pack(side="left", fill="x", expand=True)
         self.path_entry.bind("<Return>", self.go_to_typed_path)
         go_btn = RoundedButton(top, text="Go", command=self.go_to_typed_path,
-                                bg=ACCENT_BLUE, fg="#00131A", parent_bg=BG_DARK, width=50, height=28)
+                                bg=ACCENT_BLUE, fg="#FFFFFF", parent_bg=container_bg, width=50, height=28)
         go_btn.pack(side="left", padx=(6, 0))
 
-        quick_row = tk.Frame(self, padx=10, bg=BG_DARK)
+        quick_row = tk.Frame(self, padx=10, bg=container_bg)
         quick_row.pack(fill="x", pady=(4, 0))
         quick_lbl = tk.Label(quick_row, text="Quick access:")
-        style_label(quick_lbl, fg=FG_MUTED, font=("Segoe UI", 8))
+        style_label(quick_lbl, bg=container_bg, fg=FG_MUTED, font=("Segoe UI", 8))
         quick_lbl.pack(side="left", padx=(0, 6))
         for label, path in self._quick_access_locations():
             qb = RoundedButton(quick_row, text=label, command=lambda p=path: self.navigate_to(p),
-                                bg=BG_INPUT, fg=FG_TEXT, parent_bg=BG_DARK, width=80, height=24,
+                                bg=BG_INPUT, fg=FG_TEXT, parent_bg=container_bg, width=80, height=24,
                                 font=("Segoe UI", 8, "bold"))
             qb.pack(side="left", padx=2)
-
-        list_frame = tk.Frame(self, padx=10, pady=6, bg=BG_DARK)
-        list_frame.pack(fill="both", expand=True)
-        scrollbar = tk.Scrollbar(list_frame)
-        scrollbar.pack(side="right", fill="y")
-        self.listbox = tk.Listbox(list_frame, yscrollcommand=scrollbar.set)
-        style_listbox(self.listbox)
-        self.listbox.pack(side="left", fill="both", expand=True)
-        scrollbar.config(command=self.listbox.yview)
-        self.listbox.bind("<Double-Button-1>", self.on_navigate)
-        self.listbox.bind("<Return>", self.on_navigate)
-        self.listbox.bind("<BackSpace>", lambda e: self.go_up())
-
-        hint = tk.Label(self, text="Doppelklick/Enter: Ordner öffnen  \u2022  \u2191 Up oder Backspace: hoch  "
-                                    "\u2022  Pfad oben eintippen/einfügen + Enter",
-                         anchor="w")
-        style_label(hint, fg=FG_MUTED, font=("Segoe UI", 8))
-        hint.pack(fill="x", padx=10)
-
-        btn_row = tk.Frame(self, padx=10, pady=10, bg=BG_DARK)
-        btn_row.pack(fill="x")
-        cancel_btn = RoundedButton(btn_row, text="Cancel", command=self.on_cancel,
-                                    bg=BG_INPUT, fg=FG_TEXT, parent_bg=BG_DARK)
-        cancel_btn.pack(side="right", padx=4)
-        select_btn = RoundedButton(btn_row, text="Diesen Ordner wählen", command=self.on_confirm,
-                                    bg=ACCENT_GREEN, fg="#0A1F0A", parent_bg=BG_DARK, width=170)
-        select_btn.pack(side="right", padx=4)
-
-        self.refresh_list()
-        self.transient(parent)
-        self._safe_grab()
 
     def _quick_access_locations(self):
         home = os.path.expanduser("~")
@@ -491,6 +555,59 @@ class FolderPickerDialog(tk.Toplevel):
         typed = os.path.expanduser(typed)
         self.navigate_to(typed)
 
+    def _update_path_entry(self):
+        if hasattr(self, "path_entry"):
+            self.path_entry.delete(0, tk.END)
+            self.path_entry.insert(0, self.current_dir)
+
+
+class FolderPickerDialog(FolderNavMixin, tk.Toplevel):
+    """Dark-themed replacement for filedialog.askdirectory(), since native OS
+    folder dialogs cannot be restyled through Tkinter. Used where a dedicated
+    folder-selection step makes sense on its own (e.g. the IMPORT root)."""
+
+    def __init__(self, parent, initial_dir=None, title="Select Folder"):
+        super().__init__(parent)
+        self.title(title)
+        self.geometry(f"{PREVIEW_MIN_W}x{PREVIEW_MIN_H}")
+        self.minsize(PREVIEW_MIN_W, PREVIEW_MIN_H)
+        style_toplevel(self)
+        self.selected_dir = None
+        self.current_dir = initial_dir if initial_dir and os.path.isdir(initial_dir) else os.path.expanduser("~")
+
+        self._build_nav_bar(container_bg=BG_DARK)
+
+        list_frame = tk.Frame(self, padx=10, pady=6, bg=BG_DARK)
+        list_frame.pack(fill="both", expand=True)
+        scrollbar = tk.Scrollbar(list_frame)
+        scrollbar.pack(side="right", fill="y")
+        self.listbox = tk.Listbox(list_frame, yscrollcommand=scrollbar.set)
+        style_listbox(self.listbox)
+        self.listbox.pack(side="left", fill="both", expand=True)
+        scrollbar.config(command=self.listbox.yview)
+        self.listbox.bind("<Double-Button-1>", self.on_navigate)
+        self.listbox.bind("<Return>", self.on_navigate)
+        self.listbox.bind("<BackSpace>", lambda e: self.go_up())
+
+        hint = tk.Label(self, text="Doppelklick/Enter: Ordner öffnen  \u2022  \u2191 Up oder Backspace: hoch  "
+                                    "\u2022  Pfad oben eintippen/einfügen + Enter",
+                         anchor="w")
+        style_label(hint, fg=FG_MUTED, font=("Segoe UI", 8))
+        hint.pack(fill="x", padx=10)
+
+        btn_row = tk.Frame(self, padx=10, pady=10, bg=BG_DARK)
+        btn_row.pack(fill="x")
+        cancel_btn = RoundedButton(btn_row, text="Cancel", command=self.on_cancel,
+                                    bg=BG_INPUT, fg=FG_TEXT, parent_bg=BG_DARK)
+        cancel_btn.pack(side="right", padx=4)
+        select_btn = RoundedButton(btn_row, text="Diesen Ordner wählen", command=self.on_confirm,
+                                    bg=ACCENT_GREEN, fg="#FFFFFF", parent_bg=BG_DARK, width=170)
+        select_btn.pack(side="right", padx=4)
+
+        self.refresh_list()
+        self.transient(parent)
+        self._safe_grab()
+
     def _safe_grab(self, attempt=0):
         try:
             self.update_idletasks()
@@ -505,8 +622,7 @@ class FolderPickerDialog(tk.Toplevel):
 
     def refresh_list(self):
         self.listbox.delete(0, tk.END)
-        self.path_entry.delete(0, tk.END)
-        self.path_entry.insert(0, self.current_dir)
+        self._update_path_entry()
         try:
             entries = sorted(
                 e for e in os.listdir(self.current_dir)
@@ -537,8 +653,7 @@ class FolderPickerDialog(tk.Toplevel):
         self.selected_dir = None
         self.destroy()
 
-
-class AudioPreviewDialog(tk.Toplevel):
+class AudioPreviewDialog(FolderNavMixin, tk.Toplevel):
     def __init__(self, parent, initial_dir=None):
         super().__init__(parent)
         self.title("Select Sample (with Preview)")
@@ -549,14 +664,7 @@ class AudioPreviewDialog(tk.Toplevel):
         self.current_dir = initial_dir or os.path.expanduser("~")
         self.autoplay_var = tk.BooleanVar(value=False)
 
-        top = tk.Frame(self, padx=10, pady=10, bg=BG_DARK)
-        top.pack(fill="x")
-        self.path_label = tk.Label(top, text=self.current_dir, anchor="w")
-        style_label(self.path_label, fg=FG_MUTED, font=("Segoe UI", 9))
-        self.path_label.pack(side="left", fill="x", expand=True)
-        folder_btn = RoundedButton(top, text="Change Folder", command=self.choose_folder,
-                                    bg=BG_INPUT, fg=FG_TEXT, parent_bg=BG_DARK, width=130)
-        folder_btn.pack(side="right")
+        self._build_nav_bar(container_bg=BG_DARK)
 
         list_frame = tk.Frame(self, padx=10, pady=6, bg=BG_DARK)
         list_frame.pack(fill="both", expand=True)
@@ -568,22 +676,42 @@ class AudioPreviewDialog(tk.Toplevel):
         scrollbar.config(command=self.listbox.yview)
         self.listbox.bind("<<ListboxSelect>>", self.on_select)
         self.listbox.bind("<Double-Button-1>", self.on_confirm)
+        self.listbox.bind("<BackSpace>", lambda e: self.go_up())
 
         autoplay_row = tk.Frame(self, padx=10, bg=BG_DARK)
         autoplay_row.pack(fill="x")
         autoplay_cb = tk.Checkbutton(autoplay_row, text="Autoplay (play sound on click)",
-                       variable=self.autoplay_var)
+                              variable=self.autoplay_var)
         style_checkbutton(autoplay_cb)
         autoplay_cb.pack(side="left")
 
-        self.waveform_label = tk.Label(self, bg=BG_INPUT)
-        self.waveform_label.pack(fill="x", padx=10, pady=8)
+        self.duration_label = tk.Label(autoplay_row, text="")
+        style_label(self.duration_label, bg=BG_DARK, fg=ACCENT_BLUE, font=("Segoe UI", 9, "bold"))
+        self.duration_label.pack(side="right")
+
+        self.wave_width = 480
+        self.wave_height = 80
+        self.wave_canvas = tk.Canvas(self, bg=BG_INPUT, width=self.wave_width,
+                                      height=self.wave_height, highlightthickness=0,
+                                      cursor="sb_h_double_arrow")
+        self.wave_canvas.pack(fill="x", padx=10, pady=8)
         self.waveform_img = None
+        self.trim_start_frac = 0.0
+        self.trim_end_frac = 1.0
+        self.drag_target = None
+        self.is_playing = False
+        self.play_start_time = None
+        self.play_duration = 0.0
+        self.current_audio_path = None
+
+        self.wave_canvas.bind("<ButtonPress-1>", self.on_wave_press)
+        self.wave_canvas.bind("<B1-Motion>", self.on_wave_drag)
+        self.wave_canvas.bind("<ButtonRelease-1>", self.on_wave_release)
 
         btn_row = tk.Frame(self, padx=10, pady=10, bg=BG_DARK)
         btn_row.pack(fill="x")
         preview_btn = RoundedButton(btn_row, text="Preview", command=self.preview_selected,
-                                     bg=ACCENT_BLUE, fg="#00131A", parent_bg=BG_DARK)
+                                     bg=ACCENT_BLUE, fg="#FFFFFF", parent_bg=BG_DARK)
         preview_btn.pack(side="left", padx=4)
         stop_btn = RoundedButton(btn_row, text="Stop", command=self.stop_preview,
                                   bg=BG_INPUT, fg=FG_TEXT, parent_bg=BG_DARK)
@@ -592,7 +720,7 @@ class AudioPreviewDialog(tk.Toplevel):
                                     bg=BG_INPUT, fg=FG_TEXT, parent_bg=BG_DARK)
         cancel_btn.pack(side="right", padx=4)
         select_btn = RoundedButton(btn_row, text="Select", command=self.on_confirm,
-                                    bg=ACCENT_GREEN, fg="#0A1F0A", parent_bg=BG_DARK)
+                                    bg=ACCENT_GREEN, fg="#FFFFFF", parent_bg=BG_DARK)
         select_btn.pack(side="right", padx=4)
 
         self.refresh_list()
@@ -613,7 +741,7 @@ class AudioPreviewDialog(tk.Toplevel):
 
     def refresh_list(self):
         self.listbox.delete(0, tk.END)
-        self.path_label.config(text=self.current_dir)
+        self._update_path_entry()
         try:
             entries = sorted(os.listdir(self.current_dir))
         except Exception as e:
@@ -642,7 +770,7 @@ class AudioPreviewDialog(tk.Toplevel):
                 self.preview_selected()
         else:
             self.selected_path = None
-            self.waveform_label.config(image="", text="")
+            self.wave_canvas.delete("all")
 
     def show_waveform(self, path):
         wav_path = path
@@ -652,45 +780,130 @@ class AudioPreviewDialog(tk.Toplevel):
                 wav_path = os.path.join(os.path.expanduser("~"), ".p6_waveform_src.wav")
                 sound.export(wav_path, format="wav")
             except Exception:
-                self.waveform_label.config(image="", text="(No preview)", fg=FG_MUTED)
+                self.wave_canvas.delete("all")
+                self.wave_canvas.create_text(self.wave_width // 2, self.wave_height // 2,
+                                              text="(No preview)", fill=FG_MUTED)
                 return
-        png_path = render_waveform_image(wav_path)
+
+        self.current_audio_path = wav_path
+        self.trim_start_frac = 0.0
+        self.trim_end_frac = 1.0
+
+        try:
+            duration, rate, channels = get_wav_info(wav_path)
+            self.play_duration = duration
+        except Exception:
+            self.play_duration = 0.0
+
+        png_path = render_waveform_image(wav_path, width_px=self.wave_width, height_px=self.wave_height)
+        self.wave_canvas.delete("all")
         if png_path:
             try:
                 self.waveform_img = tk.PhotoImage(file=png_path)
-                self.waveform_label.config(image=self.waveform_img, text="")
+                self.wave_canvas.create_image(0, 0, anchor="nw", image=self.waveform_img)
             except Exception:
-                self.waveform_label.config(image="", text="(No preview)", fg=FG_MUTED)
+                self.wave_canvas.create_text(self.wave_width // 2, self.wave_height // 2,
+                                              text="(No preview)", fill=FG_MUTED)
+                return
         else:
-            self.waveform_label.config(image="", text="(No preview)", fg=FG_MUTED)
+            self.wave_canvas.create_text(self.wave_width // 2, self.wave_height // 2,
+                                          text="(No preview)", fill=FG_MUTED)
+            return
+
+        self.redraw_markers()
+
+    def redraw_markers(self):
+        self.wave_canvas.delete("marker")
+        self.wave_canvas.delete("playhead")
+        x_start = self.trim_start_frac * self.wave_width
+        x_end = self.trim_end_frac * self.wave_width
+        if x_start > 0:
+            self.wave_canvas.create_rectangle(0, 0, x_start, self.wave_height,
+                                               fill=BG_DARK, stipple="gray50", outline="",
+                                               tags="marker")
+        if x_end < self.wave_width:
+            self.wave_canvas.create_rectangle(x_end, 0, self.wave_width, self.wave_height,
+                                               fill=BG_DARK, stipple="gray50", outline="",
+                                               tags="marker")
+        self.wave_canvas.create_line(x_start, 0, x_start, self.wave_height,
+                                      fill=ACCENT_GREEN, width=2, tags="marker")
+        self.wave_canvas.create_line(x_end, 0, x_end, self.wave_height,
+                                      fill=ACCENT_RED, width=2, tags="marker")
+        self.update_duration_label()
+            
+    def update_duration_label(self):
+         if not hasattr(self, "duration_label"):
+             return
+         if self.play_duration <= 0:
+             self.duration_label.config(text="")
+             return
+         region_duration = self.play_duration * (self.trim_end_frac - self.trim_start_frac)
+         self.duration_label.config(text=f"Selection: {region_duration:.2f}s")
+
+    def on_wave_press(self, event):
+        x_start = self.trim_start_frac * self.wave_width
+        x_end = self.trim_end_frac * self.wave_width
+        if abs(event.x - x_start) <= 6:
+            self.drag_target = "start"
+        elif abs(event.x - x_end) <= 6:
+            self.drag_target = "end"
+        else:
+            self.drag_target = None
+
+    def on_wave_drag(self, event):
+        if not self.drag_target:
+            return
+        frac = max(0.0, min(event.x / self.wave_width, 1.0))
+        if self.drag_target == "start":
+            self.trim_start_frac = min(frac, self.trim_end_frac - 0.01)
+        elif self.drag_target == "end":
+            self.trim_end_frac = max(frac, self.trim_start_frac + 0.01)
+        self.redraw_markers()
+
+    def on_wave_release(self, event):
+        self.drag_target = None
+
+    def update_playhead(self):
+        if not self.is_playing:
+            return
+        elapsed = time.time() - self.play_start_time
+        region_duration = self.play_duration * (self.trim_end_frac - self.trim_start_frac)
+        frac_in_region = min(elapsed / region_duration, 1.0) if region_duration > 0 else 1.0
+        abs_frac = self.trim_start_frac + frac_in_region * (self.trim_end_frac - self.trim_start_frac)
+        x = abs_frac * self.wave_width
+        self.wave_canvas.delete("playhead")
+        self.wave_canvas.create_line(x, 0, x, self.wave_height, fill=ACCENT_BLUE, width=2, tags="playhead")
+        if frac_in_region < 1.0:
+            self.after(30, self.update_playhead)
+        else:
+            self.is_playing = False
+            self.wave_canvas.delete("playhead")
+
+    def get_trimmed_export_path(self):
+        if self.trim_start_frac <= 0.001 and self.trim_end_frac >= 0.999:
+            return None
+        if not self.current_audio_path:
+            return None
+        return trim_wav_file(self.current_audio_path, self.trim_start_frac, self.trim_end_frac)
 
     def on_confirm(self, event=None):
         entry = self.get_selected_entry()
         if entry is None:
             return
         if entry == "..":
-            self.current_dir = os.path.dirname(self.current_dir)
-            self.refresh_list()
+            self.go_up()
             return
         if entry.startswith("[Folder] "):
             folder_name = entry.replace("[Folder] ", "", 1)
-            self.current_dir = os.path.join(self.current_dir, folder_name)
-            self.refresh_list()
+            self.navigate_to(os.path.join(self.current_dir, folder_name))
             return
-        self.selected_path = os.path.join(self.current_dir, entry)
+
+        original_path = os.path.join(self.current_dir, entry)
+        trimmed_path = self.get_trimmed_export_path()
+        self.selected_path = trimmed_path if trimmed_path else original_path
+
         self.stop_preview()
         self.destroy()
-
-    def choose_folder(self):
-        self.grab_release()
-        picker = FolderPickerDialog(self, initial_dir=self.current_dir)
-        self.wait_window(picker)
-        self.grab_set()
-        self.lift()
-        self.focus_force()
-        if picker.selected_dir:
-            self.current_dir = picker.selected_dir
-            self.refresh_list()
 
     def preview_selected(self):
         entry = self.get_selected_entry()
@@ -708,8 +921,18 @@ class AudioPreviewDialog(tk.Toplevel):
                 tmp_preview = os.path.join(os.path.expanduser("~"), ".p6_preview_tmp.wav")
                 sound.export(tmp_preview, format="wav")
                 play_path = tmp_preview
+
             data, fs = sf.read(play_path, dtype="float32")
-            sd.play(data, fs)
+            n = len(data)
+            start_i = int(self.trim_start_frac * n)
+            end_i = int(self.trim_end_frac * n)
+            segment = data[start_i:end_i]
+            segment = apply_micro_fade(segment, fs, fade_ms=2)
+            sd.play(segment, fs)
+
+            self.is_playing = True
+            self.play_start_time = time.time()
+            self.update_playhead()
         except Exception as e:
             messagebox.showerror("Error During Preview", str(e))
 
@@ -718,6 +941,8 @@ class AudioPreviewDialog(tk.Toplevel):
             sd.stop()
         except Exception:
             pass
+        self.is_playing = False
+        self.wave_canvas.delete("playhead")
 
     def on_cancel(self):
         self.stop_preview()
@@ -725,7 +950,8 @@ class AudioPreviewDialog(tk.Toplevel):
         self.destroy()
 
 
-class ChopDialog(tk.Toplevel):
+
+class ChopDialog(FolderNavMixin, tk.Toplevel):
     def __init__(self, parent, initial_dir=None):
         super().__init__(parent)
         self.title("Chop - Build Multisample")
@@ -736,14 +962,7 @@ class ChopDialog(tk.Toplevel):
         self.current_dir = initial_dir or os.path.expanduser("~")
         self.selected_files = []
 
-        top = tk.Frame(self, padx=10, pady=10, bg=BG_DARK)
-        top.pack(fill="x")
-        self.path_label = tk.Label(top, text=self.current_dir, anchor="w")
-        style_label(self.path_label, fg=FG_MUTED, font=("Segoe UI", 9))
-        self.path_label.pack(side="left", fill="x", expand=True)
-        folder_btn = RoundedButton(top, text="Change Folder", command=self.choose_folder,
-                                    bg=BG_INPUT, fg=FG_TEXT, parent_bg=BG_DARK, width=130)
-        folder_btn.pack(side="right")
+        self._build_nav_bar(container_bg=BG_DARK)
 
         list_frame = tk.Frame(self, padx=10, pady=6, bg=BG_DARK)
         list_frame.pack(fill="both", expand=True)
@@ -756,6 +975,7 @@ class ChopDialog(tk.Toplevel):
         scrollbar.config(command=self.listbox.yview)
         self.listbox.bind("<Double-Button-1>", self.on_double_click)
         self.listbox.bind("<<ListboxSelect>>", self.on_select)
+        self.listbox.bind("<BackSpace>", lambda e: self.go_up())
 
         self.autoplay_var = tk.BooleanVar(value=False)
         preview_row = tk.Frame(self, padx=10, bg=BG_DARK)
@@ -765,7 +985,7 @@ class ChopDialog(tk.Toplevel):
         style_checkbutton(autoplay_cb)
         autoplay_cb.pack(side="left")
         preview_btn = RoundedButton(preview_row, text="Preview", command=self.preview_selected,
-                                     bg=ACCENT_BLUE, fg="#00131A", parent_bg=BG_DARK)
+                                     bg=ACCENT_BLUE, fg="#FFFFFF", parent_bg=BG_DARK)
         preview_btn.pack(side="left", padx=6)
         stop_btn = RoundedButton(preview_row, text="Stop", command=self.stop_preview,
                                   bg=BG_INPUT, fg=FG_TEXT, parent_bg=BG_DARK)
@@ -812,13 +1032,13 @@ class ChopDialog(tk.Toplevel):
                                     bg=BG_INPUT, fg=FG_TEXT, parent_bg=BG_DARK)
         cancel_btn.pack(side="right", padx=4)
         build_btn = RoundedButton(btn_row, text="Build Multisample", command=self.on_build,
-                                   bg=ACCENT_GREEN, fg="#0A1F0A", parent_bg=BG_DARK, width=150)
+                                   bg=ACCENT_GREEN, fg="#FFFFFF", parent_bg=BG_DARK, width=150)
         build_btn.pack(side="right", padx=4)
         add_btn = RoundedButton(btn_row, text="Add Selected", command=self.add_selected,
-                                 bg=ACCENT_BLUE, fg="#00131A", parent_bg=BG_DARK, width=120)
+                                 bg=ACCENT_BLUE, fg="#FFFFFF", parent_bg=BG_DARK, width=120)
         add_btn.pack(side="left", padx=4)
         remove_btn = RoundedButton(btn_row, text="Remove Selected", command=self.remove_selected,
-                                    bg=ACCENT_ORANGE, fg="#2A1600", parent_bg=BG_DARK, width=140)
+                                    bg=ACCENT_ORANGE, fg="#FFFFFF", parent_bg=BG_DARK, width=140)
         remove_btn.pack(side="left", padx=4)
         clear_btn = RoundedButton(btn_row, text="Clear Selection", command=self.clear_selection,
                                    bg=BG_INPUT, fg=FG_TEXT, parent_bg=BG_DARK, width=130)
@@ -842,7 +1062,7 @@ class ChopDialog(tk.Toplevel):
 
     def refresh_list(self):
         self.listbox.delete(0, tk.END)
-        self.path_label.config(text=self.current_dir)
+        self._update_path_entry()
         try:
             entries = sorted(os.listdir(self.current_dir))
         except Exception as e:
@@ -874,12 +1094,10 @@ class ChopDialog(tk.Toplevel):
             return
         entry = self.listbox.get(sel[0])
         if entry == "..":
-            self.current_dir = os.path.dirname(self.current_dir)
-            self.refresh_list()
+            self.go_up()
         elif entry.startswith("[Folder] "):
             folder_name = entry.replace("[Folder] ", "", 1)
-            self.current_dir = os.path.join(self.current_dir, folder_name)
-            self.refresh_list()
+            self.navigate_to(os.path.join(self.current_dir, folder_name))
         else:
             self.toggle_selected()
 
@@ -916,17 +1134,6 @@ class ChopDialog(tk.Toplevel):
             sd.stop()
         except Exception:
             pass
-
-    def choose_folder(self):
-        self.grab_release()
-        picker = FolderPickerDialog(self, initial_dir=self.current_dir)
-        self.wait_window(picker)
-        self.grab_set()
-        self.lift()
-        self.focus_force()
-        if picker.selected_dir:
-            self.current_dir = picker.selected_dir
-            self.refresh_list()
 
     def add_selected(self):
         sel = self.listbox.curselection()
@@ -1041,13 +1248,12 @@ class SampleSlot:
         self.filepath = None
         self.target_rate = tk.IntVar(value=44100)
 
-        self.frame = tk.LabelFrame(parent, text=f"PAD_{pad_num}", padx=10, pady=10,
-                                    bg=BG_PANEL, fg=ACCENT_BLUE,
-                                    font=("Segoe UI", 10, "bold"),
-                                    highlightbackground=BORDER_COLOR,
-                                    highlightthickness=1, bd=0)
-        self.frame.grid(row=(pad_num - 1) // 3, column=(pad_num - 1) % 3,
+        self.panel = RoundedPanel(parent, title=f"PAD_{pad_num}",
+                                   parent_bg=parent.cget("bg"), panel_bg=BG_PANEL,
+                                   border=BORDER_LIGHT, radius=14, title_fg=ACCENT_BLUE)
+        self.panel.grid(row=(pad_num - 1) // 3, column=(pad_num - 1) % 3,
                          padx=6, pady=6, sticky="nsew")
+        self.frame = self.panel.body
 
         self.label = tk.Label(self.frame, text="No sample loaded", width=30,
                                anchor="w")
@@ -1060,8 +1266,8 @@ class SampleSlot:
         style_label(rate_lbl, bg=BG_PANEL, font=("Segoe UI", 9))
         rate_lbl.pack(side="left")
         rate_menu = RoundedDropdown(rate_row, self.target_rate, TARGET_RATES,
-                      command=lambda _: self.update_warning(),
-                      parent_bg=BG_PANEL, width=90, height=26, font=("Segoe UI", 9))
+                       command=lambda _: (self.update_warning(), self.app.update_storage_display()),
+                       parent_bg=BG_PANEL, width=90, height=26, font=("Segoe UI", 9))
         rate_menu.pack(side="left", padx=4)
 
         self.warn_label = tk.Label(self.frame, text="", wraplength=220,
@@ -1075,18 +1281,18 @@ class SampleSlot:
                                   bg=BG_INPUT, fg=FG_TEXT, parent_bg=BG_PANEL, width=80, height=28)
         load_btn.pack(side="left", padx=2)
         self.play_btn = RoundedButton(btn_row, text="Play", command=self.play_sample,
-                                       bg=ACCENT_GREEN, fg="#0A1F0A", parent_bg=BG_PANEL,
+                                       bg=ACCENT_GREEN, fg="#FFFFFF", parent_bg=BG_PANEL,
                                        width=70, height=28, state="disabled")
         self.play_btn.pack(side="left", padx=2)
         self.remove_btn = RoundedButton(btn_row, text="Remove", command=self.remove_sample,
-                                         bg=ACCENT_RED, fg="#2A0A0A", parent_bg=BG_PANEL,
+                                         bg=ACCENT_RED, fg="#FFFFFF", parent_bg=BG_PANEL,
                                          width=80, height=28, state="disabled")
         self.remove_btn.pack(side="left", padx=2)
 
         btn_row2 = tk.Frame(self.frame, bg=BG_PANEL)
         btn_row2.pack(fill="x", pady=2)
         chop_btn = RoundedButton(btn_row2, text="Chop...", command=self.open_chop,
-                                  bg=ACCENT_ORANGE, fg="#2A1600", parent_bg=BG_PANEL,
+                                  bg=ACCENT_ORANGE, fg="#FFFFFF", parent_bg=BG_PANEL,
                                   width=80, height=28)
         chop_btn.pack(side="left", padx=2)
 
@@ -1112,6 +1318,8 @@ class SampleSlot:
             print(f"Could not detect sample rate for PAD_{self.pad_num}: {e}")
 
         self.update_warning()
+        if hasattr(self.app, "update_storage_display"):
+            self.app.update_storage_display()
 
     def update_warning(self):
         if not self.filepath:
@@ -1207,12 +1415,14 @@ class SampleSlot:
         self.warn_label.config(text="")
         self.play_btn.config_state("disabled")
         self.remove_btn.config_state("disabled")
+        if hasattr(self.app, "update_storage_display"):
+            self.app.update_storage_display()
 
 
 class P6ManagerApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("Roland AIRA P-6 Sample Manager v1.3.0")
+        self.root.title("Roland AIRA P-6 Sample Manager v1.4.9")
         self.root.configure(bg=BG_DARK)
         self.root.minsize(MAIN_MIN_W, MAIN_MIN_H)
         self.root.geometry(f"{MAIN_MIN_W}x{MAIN_MIN_H}")
@@ -1234,27 +1444,60 @@ class P6ManagerApp:
         self.path_label.pack(side="left", padx=20)
 
         del_btn = RoundedButton(top, text="Delete Bank", command=self.delete_current_bank,
-                                 bg=ACCENT_RED, fg="#2A0A0A", parent_bg=BG_DARK, width=110)
+                                 bg=ACCENT_RED, fg="#FFFFFF", parent_bg=BG_DARK, width=110)
         del_btn.pack(side="right", padx=4)
         sync_btn = RoundedButton(top, text="Sync with Device", command=self.sync_from_device,
-                                  bg=ACCENT_ORANGE, fg="#2A1600", parent_bg=BG_DARK, width=140)
+                                  bg=ACCENT_ORANGE, fg="#FFFFFF", parent_bg=BG_DARK, width=140)
         sync_btn.pack(side="right", padx=4)
         folder_btn = RoundedButton(top, text="Choose Folder", command=self.choose_import_folder,
-                                    bg=ACCENT_PURPLE, fg="#1A0A1F", parent_bg=BG_DARK, width=130)
+                                    bg=ACCENT_PURPLE, fg="#FFFFFF", parent_bg=BG_DARK, width=130)
         folder_btn.pack(side="right", padx=4)
 
         self.pad_container = tk.Frame(root, padx=14, bg=BG_DARK)
         self.pad_container.pack(fill="x", pady=(6, 0))
 
         bottom = tk.Frame(root, padx=14, bg=BG_DARK)
-        bottom.pack(fill="x", side="top", pady=(10, 14))
+        bottom.pack(fill="x", side="top", pady=(10, 8))
         copy_bank_btn = RoundedButton(bottom, text="Copy Current Bank", command=self.export_current_bank,
-                                       bg=ACCENT_GREEN, fg="#0A1F0A", parent_bg=BG_DARK, width=160)
+                                       bg=ACCENT_GREEN, fg="#FFFFFF", parent_bg=BG_DARK, width=160)
         copy_bank_btn.pack(side="left", padx=4)
         copy_all_btn = RoundedButton(bottom, text="Copy ALL Banks", command=self.export_all_banks,
-                                      bg=ACCENT_BLUE, fg="#00131A", parent_bg=BG_DARK, width=140)
+                                      bg=ACCENT_BLUE, fg="#FFFFFF", parent_bg=BG_DARK, width=140)
         copy_all_btn.pack(side="left", padx=4)
 
+        storage_outer = tk.Frame(root, padx=14, bg=BG_DARK)
+        storage_outer.pack(fill="x", side="top", pady=(0, 14))
+        self.storage_panel = RoundedPanel(storage_outer, title="Storage (loaded samples)",
+                                           parent_bg=BG_DARK, panel_bg=BG_PANEL,
+                                           border=BORDER_LIGHT, radius=14, title_fg=ACCENT_BLUE)
+        self.storage_panel.pack(fill="x")
+
+        storage_row = tk.Frame(self.storage_panel.body, bg=BG_PANEL)
+        storage_row.pack(fill="x")
+
+        bank_col = tk.Frame(storage_row, bg=BG_PANEL)
+        bank_col.pack(side="left", padx=(0, 40))
+        bank_col_title = tk.Label(bank_col, text="Current Bank")
+        style_label(bank_col_title, bg=BG_PANEL, fg=FG_MUTED, font=("Segoe UI", 8, "bold"))
+        bank_col_title.pack(anchor="w")
+        self.bank_size_label = tk.Label(bank_col, text="0.00 MB")
+        style_label(self.bank_size_label, bg=BG_PANEL, fg=FG_TEXT, font=("Segoe UI", 15, "bold"))
+        self.bank_size_label.pack(anchor="w")
+
+        total_col = tk.Frame(storage_row, bg=BG_PANEL)
+        total_col.pack(side="left")
+        total_col_title = tk.Label(total_col, text="All Banks (total)")
+        style_label(total_col_title, bg=BG_PANEL, fg=FG_MUTED, font=("Segoe UI", 8, "bold"))
+        total_col_title.pack(anchor="w")
+        self.total_size_label = tk.Label(total_col, text="0.00 MB")
+        style_label(self.total_size_label, bg=BG_PANEL, fg=FG_TEXT, font=("Segoe UI", 15, "bold"))
+        self.total_size_label.pack(anchor="w")
+
+        hint_col = tk.Frame(storage_row, bg=BG_PANEL)
+        hint_col.pack(side="left", padx=(30, 0), fill="both", expand=True)
+        self.storage_hint_label = tk.Label(hint_col, text="", anchor="w", justify="left")
+        style_label(self.storage_hint_label, bg=BG_PANEL, fg=ACCENT_RED, font=("Segoe UI", 9, "bold"))
+        self.storage_hint_label.pack(anchor="w")
         self.build_pad_slots(self.current_bank.get())
         self.sync_from_device(initial=True)
 
@@ -1291,6 +1534,55 @@ class P6ManagerApp:
                 except Exception as e:
                     print(f"Warning: Bank {bank} PAD_{pad} could not be restored: {e}")
             self.slots[bank][pad] = new_slot
+        self.update_storage_display()
+
+    def _estimated_export_bytes(self, filepath, target_rate):
+        try:
+            duration, orig_rate, channels = get_wav_info(filepath)
+        except Exception:
+            try:
+                return os.path.getsize(filepath)
+            except OSError:
+                return 0
+        bytes_per_sample = 2  # 16-bit PCM, wie vom P-6 erwartet
+        return int(duration * target_rate * channels * bytes_per_sample)
+
+    def _bank_size_bytes(self, bank):
+        total = 0
+        for slot in self.slots.get(bank, {}).values():
+            path = getattr(slot, "filepath", None)
+            if path and os.path.exists(path):
+                target_rate = slot.target_rate.get() if hasattr(slot, "target_rate") else None
+                if target_rate:
+                    total += self._estimated_export_bytes(path, target_rate)
+                else:
+                    try:
+                        total += os.path.getsize(path)
+                    except OSError:
+                        pass
+        return total
+
+    def update_storage_display(self):
+        if not hasattr(self, "bank_size_label"):
+            return  # panel not built yet during early init
+
+        bank = self.current_bank.get()
+        bank_bytes = self._bank_size_bytes(bank)
+        total_bytes = sum(self._bank_size_bytes(b) for b in BANKS)
+        limit_mb = MAX_UPLOAD_BYTES / (1024 * 1024)
+
+        bank_mb = bank_bytes / (1024 * 1024)
+        total_mb = total_bytes / (1024 * 1024)
+        bank_over = bank_bytes > MAX_UPLOAD_BYTES
+        total_over = total_bytes > MAX_UPLOAD_BYTES
+
+        self.bank_size_label.config(text=f"{bank_mb:.2f} MB", fg=ACCENT_RED if bank_over else FG_TEXT)
+        self.total_size_label.config(text=f"{total_mb:.2f} MB", fg=ACCENT_RED if total_over else FG_TEXT)
+
+        if bank_over or total_over:
+            self.storage_hint_label.config(text=f"Max. total file size per upload is {limit_mb:.0f} MB")
+        else:
+            self.storage_hint_label.config(text="")
 
     def switch_bank(self, bank):
         self.build_pad_slots(bank)
