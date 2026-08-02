@@ -160,6 +160,7 @@ that file from the device.
   to the device, converting sample rates as configured. Any pre-existing file
   in a pad folder is automatically replaced (not duplicated).
 - "Copy ALL Banks": performs the same export for every bank A-H.
+- the P6 needs to be in storage mode before upload (hold record + switch power on). After uploading the samples press keyboard-key and wait until the display shows "done"
 
 ### 5.7 Syncing from the device
 
