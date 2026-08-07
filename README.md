@@ -198,9 +198,10 @@ needed. This is remembered across restarts.
 
 ### 5.2 Loading a sample onto a pad
 ![Sample import](https://github.com/j0kerpack/Roland-P6-sample-manager/blob/main/PyP6-Roland-P6-sample%202.0.3-manager-sample-loader.png)
+
 Click "Load" on any pad to open a file browser with folder navigation,
 waveform preview, and audition playback (with optional Autoplay). Confirm
-with "Select" or by double-clicking a file.
+with "Select" or by double-clicking a file. You can truncate the sample by dragging the bracket markers from left and right. 
 
 ### 5.3 Per-pad sound settings
 
