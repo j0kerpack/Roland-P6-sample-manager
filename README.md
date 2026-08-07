@@ -4,7 +4,7 @@
 
 ## Overview
 
-PyP6 is a desktop application (Python + Tkinter) for managing WAV/MP3 samples
+PyP6 is a free desktop application (Python + Tkinter) for managing WAV/MP3 samples
 across the 8 sample banks (A-H) and 6 pads per bank of the Roland AIRA P-6.
 It supports auditioning samples before loading, automatic MP3-to-WAV
 conversion, per-pad sample rate/pitch/mono conversion, syncing with samples
