@@ -349,8 +349,6 @@ Notes:
 
 ## 8. Credits
 
-- PyP6 - Roland P-6 Sample Manager - custom GUI tool for managing samples,
-  banks, pads, and building Chop-ready multi-samples.
 - Chop/multi-sample concept inspired by
   [p6-wave-slice](https://github.com/warreneblackwell/p6-wave-slice) by
   **Warren Blackwell**, a command-line utility that batch-processes WAV
