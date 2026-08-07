@@ -1,3 +1,4 @@
+APP_VERSION = "2.0.3"   
 import time as _time
 _t_start = _time.perf_counter()
 
