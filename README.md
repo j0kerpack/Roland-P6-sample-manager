@@ -197,7 +197,7 @@ folder. Use **Settings → Change...** to point it to the correct location if
 needed. This is remembered across restarts.
 
 ### 5.2 Loading a sample onto a pad
-
+![Sample import](https://github.com/j0kerpack/Roland-P6-sample-manager/blob/main/PyP6-Roland-P6-sample%202.0.3-manager-sample-loader.png)
 Click "Load" on any pad to open a file browser with folder navigation,
 waveform preview, and audition playback (with optional Autoplay). Confirm
 with "Select" or by double-clicking a file.
@@ -241,7 +241,7 @@ the matching file from the device if one exists.
   confirmation listing every file to be deleted. This cannot be undone.
 
 ### 5.7 Chop feature - building a multi-sample from several files
-
+![Sample chop slice tool](https://github.com/j0kerpack/Roland-P6-sample-manager/blob/main/PyP6-Roland-P6-sample-manager%202.0.3-Chop-Feature.png)
 Click "Chop" on any pad to combine several short samples (e.g. one-shot
 kicks, snares, hi-hats) into a single WAV file ready to be split into equal
 slices using the P-6's built-in **Chop** function in Sample Edit (Voice)
