@@ -1,4 +1,5 @@
 # PyP6 - Roland P-6 Sample Manager
+![Roland-P6-sample-manager](https://github.com/j0kerpack/Roland-P6-sample-manager/blob/main/PyP6-Roland-P6-Sample-Manager%202.0.3.png)
 
 **Version 2.0.3**
 
