@@ -1,7 +1,7 @@
 import time as _time
 _t_start = _time.perf_counter()
 
-# Startup profiling counters - populated by the rounded-widget drawing code
+# Startup profiling counters - populated by the rounded-widget drawing code 
 # so we can see exactly where the layout pass spends its time.
 _PERF = {
     "panel_redraws": 0, "panel_redraw_time": 0.0,
