@@ -500,7 +500,7 @@ readable, and say plainly what is missing.
 
 ### 5.11 Chop - building a multi-sample from several files
 
-![Sample chop slice tool](https://github.com/j0kerpack/Roland-P6-sample-manager/blob/main/PyP6chop.png)
+![Sample chop slice tool](https://github.com/j0kerpack/Roland-P6-sample-manager/blob/main/PyP6Chop.png)
 
 Click "Chop" on any pad to combine several short samples into one WAV ready
 for the P-6's built-in **Chop** function in Sample Edit (Voice) mode.
