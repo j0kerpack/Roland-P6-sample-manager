@@ -552,7 +552,7 @@ while you work.
 
 ### 5.12 Wavetable synthesizer
 
-![Wavetable synthesizer](https://github.com/j0kerpack/Roland-P6-sample-manager/blob/main/PyP6Synth.png)
+![Wavetable synthesizer](https://github.com/j0kerpack/Roland-P6-sample-manager/blob/main/Pyp6Synth.png)
 
 The P-6 has no oscillators, but its START knob steps through a sample in 256
 positions. Build the sample so every position lands exactly on one waveform
