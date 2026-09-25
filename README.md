@@ -582,7 +582,7 @@ a `.PRM` telling the P-6 how to loop them.
 
 **On the P-6**
 
-Transfer the bank, then set **SIZE to 1** and turn **START**. Positions 0 to
+Transfer the bank, then set **SIZE to 1** (should be set automatically by PyP6) and turn **START**. Positions 0 to
 254 each select one waveform. Position 255 sits past the last one and does
 not produce a usable sound - that is a property of the P-6, not a fault in
 the table.
