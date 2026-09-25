@@ -441,7 +441,7 @@ following pads in order. Requires `tkinterdnd2`.
 
 ### 5.6 The all-banks view
 
-![Wavetable synthesizer](https://github.com/j0kerpack/Roland-P6-sample-manager/blob/main/PyP6MultiBank.png)
+![All banks view](https://github.com/j0kerpack/Roland-P6-sample-manager/blob/main/PyP6MultiBank.png)
 
 The view dropdown in the top bar switches between **Single bank** and **All
 banks**. The all-banks grid shows every bank as a row of 6 compact pads -
